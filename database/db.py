@@ -20,12 +20,23 @@ def _validate_db_url(url: str) -> None:
                    or os.environ.get("WEBHOOK_URL")
                    or os.environ.get("RAILWAY_PROJECT_ID"))
 
+    # Empty / prefix-only value (e.g. literally "postgresql+asyncpg://")
+    if "postgres" in url:
+        # Must contain @host
+        if "@" not in url or url.rstrip("/").endswith("://"):
+            raise RuntimeError(
+                f"DATABASE_URL is incomplete — got {url!r}. "
+                "It must be the full connection string with user, password, "
+                "host, port, and database name, e.g. "
+                "'postgresql+asyncpg://postgres:PASSWORD@host.railway.internal:5432/railway'. "
+                "On Railway: add the Postgres plugin, then on your bot service "
+                "set DATABASE_URL as a reference to ${{Postgres.DATABASE_URL}} "
+                "and rewrite the prefix to 'postgresql+asyncpg://'."
+            )
+
     if in_prod and url.startswith("sqlite"):
-        raise RuntimeError(
-            "DATABASE_URL is set to SQLite in a production environment. "
-            "Add Railway's Postgres plugin and reference its DATABASE_URL "
-            "(prefix it with 'postgresql+asyncpg://')."
-        )
+        log.warning("Using SQLite in production — data will be lost on every redeploy. "
+                    "Add Postgres for persistence.")
 
     if "postgres" in url and ("localhost" in url or "127.0.0.1" in url):
         if in_prod:
