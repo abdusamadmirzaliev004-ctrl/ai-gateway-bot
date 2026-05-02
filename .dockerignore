@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.git/
+.gitignore
+data/
+*.db
+*.sqlite*
+.idea/
+.vscode/
+.DS_Store

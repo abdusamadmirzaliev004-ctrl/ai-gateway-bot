@@ -43,15 +43,36 @@ async def on_shutdown(bot: Bot) -> None:
     await bot.session.close()
 
 
+async def _start_health_server(host: str, port: int) -> web.AppRunner:
+    """Tiny aiohttp server exposing /health so platforms (Railway/Render/Fly)
+    pass their TCP/HTTP healthcheck even when the bot runs in polling mode."""
+    app = web.Application()
+
+    async def _health(_req):
+        return web.json_response({"ok": True, "mode": "polling"})
+
+    app.router.add_get("/health", _health)
+    app.router.add_get("/", _health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host=host, port=port)
+    await site.start()
+    log.info("Health server listening on %s:%s", host, port)
+    return runner
+
+
 async def run_polling() -> None:
     s = get_settings()
     bot = Bot(s.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = build_dispatcher()
     await on_startup(bot, s)
+    port = int(os.getenv("PORT", s.webapp_port))
+    runner = await _start_health_server(s.webapp_host, port)
     log.info("Starting polling…")
     try:
         await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
     finally:
+        await runner.cleanup()
         await on_shutdown(bot)
 
 
