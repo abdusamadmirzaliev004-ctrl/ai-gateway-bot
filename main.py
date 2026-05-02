@@ -150,7 +150,72 @@ async def _on_cleanup(app: web.Application) -> None:
             pass
 
 
+def _diagnose_env() -> None:
+    """Print the env vars that determine deployment behavior so the operator
+    can see at a glance what Railway actually injected."""
+    def _mask(v: str) -> str:
+        if not v:
+            return "NOT SET"
+        if len(v) <= 8:
+            return "***"
+        return f"{v[:4]}…{v[-4:]} (len={len(v)})"
+
+    log.info("=== Environment diagnostic ===")
+    log.info("WEBHOOK_URL=%s", os.environ.get("WEBHOOK_URL", "NOT SET"))
+    log.info("PORT=%s", os.environ.get("PORT", "NOT SET"))
+    log.info("WEBAPP_PORT=%s", os.environ.get("WEBAPP_PORT", "NOT SET"))
+    log.info("BOT_TOKEN=%s", _mask(os.environ.get("BOT_TOKEN", "")))
+    db = os.environ.get("DATABASE_URL", "NOT SET")
+    if db != "NOT SET" and "@" in db:
+        # Hide credentials, show host only
+        host = db.split("@")[-1]
+        log.info("DATABASE_URL=***@%s", host)
+    else:
+        log.info("DATABASE_URL=%s", db)
+    log.info("DEFAULT_PROVIDER=%s", os.environ.get("DEFAULT_PROVIDER", "NOT SET"))
+    log.info("ADMIN_IDS=%s", os.environ.get("ADMIN_IDS", "NOT SET"))
+    log.info("RAILWAY_ENVIRONMENT=%s", os.environ.get("RAILWAY_ENVIRONMENT", "NOT SET"))
+    log.info("==============================")
+
+
+def _validate_webhook_url() -> None:
+    """If WEBHOOK_URL is set, sanity-check it: must be https and the host
+    must resolve via DNS. Fail loudly with the exact URL on error."""
+    import socket
+    from urllib.parse import urlparse
+
+    raw = os.environ.get("WEBHOOK_URL", "").strip()
+    if not raw:
+        log.info("WEBHOOK_URL not set → bot will run in long-polling mode "
+                 "(this works fine on Railway).")
+        return
+
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https"):
+        raise RuntimeError(
+            f"WEBHOOK_URL must start with https:// — got {raw!r}"
+        )
+    if not parsed.hostname:
+        raise RuntimeError(f"WEBHOOK_URL has no hostname: {raw!r}")
+    if parsed.scheme == "http":
+        log.warning("WEBHOOK_URL uses http (Telegram requires https in prod): %s", raw)
+
+    try:
+        socket.gethostbyname(parsed.hostname)
+        log.info("WEBHOOK_URL DNS OK: %s → %s",
+                 parsed.hostname, socket.gethostbyname(parsed.hostname))
+    except socket.gaierror as e:
+        raise RuntimeError(
+            f"WEBHOOK_URL hostname does not resolve via DNS. "
+            f"URL={raw!r} hostname={parsed.hostname!r} error={e}. "
+            f"On Railway, set WEBHOOK_URL to the public domain you generated "
+            f"under Settings → Networking (e.g. https://your-app.up.railway.app)."
+        ) from e
+
+
 def main() -> None:
+    _diagnose_env()
+    _validate_webhook_url()
     host = _resolve_host()
     port = _resolve_port()
     log.info("Booting AI Gateway. Binding %s:%s", host, port)
