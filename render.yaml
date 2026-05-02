@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ai-gateway-bot
+    env: docker
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: WEBAPP_HOST
+        value: 0.0.0.0
+      - key: WEBAPP_PORT
+        value: 8080
